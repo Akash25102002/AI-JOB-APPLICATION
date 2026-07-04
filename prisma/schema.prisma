@@ -1,0 +1,400 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum SubscriptionStatus {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum ApplicationStatus {
+  APPLIED
+  INTERVIEW
+  OA
+  HR_ROUND
+  TECHNICAL
+  MANAGER
+  OFFER
+  REJECTED
+  ACCEPTED
+  ARCHIVED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+  TEMPORARY
+}
+
+enum WorkLocationType {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum OutreachType {
+  LINKEDIN
+  EMAIL
+  REFERRAL
+  RECRUITER
+  COLD_OUTREACH
+}
+
+enum OutreachStatus {
+  DRAFT
+  SENT
+  REPLIED
+  NO_RESPONSE
+}
+
+enum AIRequestType {
+  RESUME_PARSE
+  RESUME_ANALYZE
+  COVER_LETTER
+  OUTREACH
+  JOB_MATCH
+  INTERVIEW_PREP
+}
+
+model User {
+  id            String             @id @default(cuid())
+  email         String             @unique
+  clerkId       String             @unique
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  
+  profile       Profile?
+  resumes       Resume[]
+  savedJobs     SavedJob[]
+  applications  Application[]
+  aiRequests    AIRequest[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  notifications Notification[]
+  interviews    Interview[]
+  coverLetters  CoverLetter[]
+  followUps     FollowUp[]
+  outreachMsgs  ColdOutreach[]
+
+  @@index([clerkId])
+  @@index([email])
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String?
+  lastName    String?
+  phoneNumber String?
+  headline    String?
+  bio         String?
+  websiteUrl  String?
+  linkedinUrl String?
+  githubUrl   String?
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Resume {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  isDefault    Boolean         @default(false)
+  fileUrl      String?
+  fileKey      String?
+  rawText      String?
+  parsedData   Json?           // Structured JSON representation of parsed data
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  
+  versions     ResumeVersion[]
+  analyses     ResumeAnalysis[]
+  applications Application[]
+
+  @@index([userId])
+}
+
+model ResumeVersion {
+  id          String   @id @default(cuid())
+  resumeId    String
+  resume      Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  version     Int
+  name        String
+  fileUrl     String?
+  rawText     String?
+  parsedData  Json?
+  createdAt   DateTime @default(now())
+
+  @@index([resumeId])
+}
+
+model ResumeAnalysis {
+  id             String   @id @default(cuid())
+  resumeId       String
+  resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  score          Int      // Overall score out of 100
+  atsScore       Int      // ATS Compatibility score out of 100
+  missingSkills  String[]
+  keywords       String[]
+  formatting     Json?    // Array of formatting issues
+  grammar        Json?    // Array of grammar issues
+  summary        String?  // Summary breakdown
+  bulletsAnalysis Json?   // List of analyzed bullet points (weak/strong + suggestions)
+  createdAt      DateTime @default(now())
+
+  @@index([resumeId])
+}
+
+model Company {
+  id          String        @id @default(cuid())
+  name        String        @unique
+  logoUrl     String?
+  websiteUrl  String?
+  description String?
+  industry    String?
+  size        String?
+  headquarters String?
+  
+  jobs         Job[]
+  applications Application[]
+}
+
+model Job {
+  id            String           @id @default(cuid())
+  companyId     String
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title         String
+  description   String
+  requirements  String?
+  benefits      String?
+  salaryRange   String?
+  location      String
+  workType      WorkLocationType @default(ONSITE)
+  jobType       JobType          @default(FULL_TIME)
+  url           String?
+  source        String?          // e.g. LinkedIn, Adzuna, greenhouse
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  
+  savedBy       SavedJob[]
+  applications  Application[]
+  matches       JobMatch[]
+
+  @@index([companyId])
+  @@index([title])
+  @@index([location])
+}
+
+model SavedJob {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  folder    String   @default("General") // Folder for user organization
+  notes     String?
+  priority  Int      @default(3) // 1 = High, 2 = Med, 3 = Low
+  deadline  DateTime?
+  tags      String[]
+  createdAt DateTime @default(now())
+
+  @@unique([userId, jobId])
+  @@index([userId])
+  @@index([jobId])
+}
+
+model Application {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId        String
+  job          Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  companyId    String
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  resumeId     String?
+  resume       Resume?           @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  status       ApplicationStatus @default(APPLIED)
+  salary       String?
+  location     String?
+  recruiterName String?
+  recruiterEmail String?
+  dateApplied  DateTime          @default(now())
+  notes        String?           // General application and interview notes
+  attachments  String[]          // URLs of uploaded collateral (e.g. customized resume, transcript)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  interviews   Interview[]
+  coverLetters CoverLetter[]
+  matches      JobMatch[]
+  followUps    FollowUp[]
+  outreaches   ColdOutreach[]
+
+  @@index([userId])
+  @@index([jobId])
+  @@index([companyId])
+  @@index([status])
+}
+
+model Interview {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  roundName     String      // e.g. OA, Technical Round, System Design
+  scheduledAt   DateTime
+  duration      Int?        // in minutes
+  interviewer   String?
+  notes         String?
+  prepMaterials Json?       // Suggested Q&As, behavioral stories, coding challenges
+  feedback      String?
+  score         Int?        // rating out of 10
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([userId])
+}
+
+model CoverLetter {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  content       String
+  tone          String      @default("Professional")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([userId])
+}
+
+model JobMatch {
+  id                 String      @id @default(cuid())
+  jobId              String
+  job                Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applicationId      String?
+  application        Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  matchPercentage    Int
+  strengths          String[]
+  weaknesses         String[]
+  skillGap           String[]
+  missingTechnologies String[]
+  suggestions        String[]
+  createdAt          DateTime    @default(now())
+
+  @@index([jobId])
+  @@index([applicationId])
+}
+
+model ColdOutreach {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  type          OutreachType   @default(EMAIL)
+  recipientName String
+  recipientRole String?
+  contactInfo   String
+  messageSubject String?
+  messageBody   String
+  status        OutreachStatus @default(DRAFT)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([applicationId])
+}
+
+model FollowUp {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  remindAt      DateTime
+  isCompleted   Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([userId])
+}
+
+model AIRequest {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         AIRequestType
+  creditsUsed  Int           @default(1)
+  promptTokens Int?
+  completionTokens Int?
+  latencyMs    Int?
+  createdAt    DateTime      @default(now())
+
+  @@index([userId])
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId   String?            @unique
+  stripePriceId      String?
+  stripeSubscriptionId String?          @unique
+  status             SubscriptionStatus @default(FREE)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([userId])
+}
+
+model Invoice {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeInvoiceId String @unique
+  amount        Int      // in cents
+  currency      String   @default("usd")
+  status        String   // e.g. paid, open, uncollectible
+  hostedInvoiceUrl String?
+  invoicePdfUrl String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  type        String   @default("info") // info, success, warning, alert
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
